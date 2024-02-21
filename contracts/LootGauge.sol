@@ -56,7 +56,7 @@ contract LootGauge is Owner, ReentrancyGuard {
         address _extraToken,
         address _lootCreator,
         address _lootReserve
-    ) {
+    ) payable { // Gas savings
         pal = _pal;
         extraToken = _extraToken;
         lootCreator = _lootCreator;
@@ -68,7 +68,7 @@ contract LootGauge is Owner, ReentrancyGuard {
     * @dev Set the BudgetController contract address
     * @param _budgetController Address of the BudgetController contract
     */
-    function setBudgetController(address _budgetController) external onlyOwner {
+    function setBudgetController(address _budgetController) external payable onlyOwner {
         budgetController = _budgetController;
 
         emit BudgetControllerSet(_budgetController);
@@ -108,7 +108,7 @@ contract LootGauge is Owner, ReentrancyGuard {
     * @param palAmount Amount of PAL to send
     * @param extraAmount Amount of extra token to send
     */
-    function sendLootBudget(uint256 palAmount, uint256 extraAmount) external nonReentrant onlyOwner() {
+    function sendLootBudget(uint256 palAmount, uint256 extraAmount) external payable nonReentrant onlyOwner() {
         // Send the budget to the LootReserve
         IERC20(pal).safeTransfer(lootReserve, palAmount);
         if(extraAmount > 0) {

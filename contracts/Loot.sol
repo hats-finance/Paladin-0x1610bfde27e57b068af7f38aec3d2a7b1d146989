@@ -56,7 +56,7 @@ contract Loot is Owner, ReentrancyGuard {
     ILootCreator public lootCreator;
 
     /** @notice Duration of vesting for Loots */
-    uint256 public vestingDuration;
+    uint64 public vestingDuration; // Gas savings
 
     /** @notice List of Loot for each user */
     mapping(address => LootData[]) public userLoots;
@@ -71,7 +71,7 @@ contract Loot is Owner, ReentrancyGuard {
     event LootClaimed(address indexed user, uint256 indexed id, uint256 palAmount, uint256 extraAmount);
 
     /** @notice Event emitted when the vesting duration is updated */
-    event VestingDurationUpdated(uint256 oldDuration, uint256 newDuration);
+    event VestingDurationUpdated(uint256 oldDuration, uint64 newDuration);
     /** @notice Event emitted when the Loot Creator address is updated */
     event LootCreatorUpdated(address oldCreator, address newCreator);
 
@@ -91,8 +91,8 @@ contract Loot is Owner, ReentrancyGuard {
         address _pal,
         address _extraToken,
         address _tokenReserve,
-        uint256 _vestingDuration
-    ){
+        uint64 _vestingDuration
+    ) payable{
         pal = IERC20(_pal);
         extraToken = IERC20(_extraToken);
         tokenReserve = _tokenReserve;
@@ -104,7 +104,7 @@ contract Loot is Owner, ReentrancyGuard {
     * @dev Sets the inital Loot Creator contract address
     * @param _lootCreator Address of the Loot Creator contract
     */
-    function setInitialLootCreator(address _lootCreator) external onlyOwner {
+    function setInitialLootCreator(address _lootCreator) external payable onlyOwner { // Gas savings
         if(address(lootCreator) != address(0)) revert Errors.CreatorAlreadySet();
         lootCreator = ILootCreator(_lootCreator);
     }
@@ -142,18 +142,19 @@ contract Loot is Owner, ReentrancyGuard {
     * @notice Returns all the user Loot IDs
     * @dev Returns all the user Loot IDs
     * @param user Address of the user
-    * @return uint256[] : List of Loot IDs
+    * @return ids : List of Loot IDs
     */
-    function getAllUserLootIds(address user) external view returns(uint256[] memory){
+    function getAllUserLootIds(address user) external view returns(uint256[] memory ids){// Gas savings
         uint256 length = userLoots[user].length;
-        uint256[] memory ids = new uint256[](length);
+        ids = new uint256[](length);
 
-        for(uint256 i; i < length;){
+        uint256 i;
+        do{ // Gas savings
             ids[i] = userLoots[user][i].id;
             unchecked { i++; }
-        }
+        }while(i < length);
 
-        return ids;
+        //return ids; // Gas-savings
     }
 
     /**
@@ -166,23 +167,25 @@ contract Loot is Owner, ReentrancyGuard {
         uint256 length = userLoots[user].length;
         uint256 activeCount;
 
-        for(uint256 i; i < length;){
+        uint256 i; // Gas savings
+        do{
             if(!userLoots[user][i].claimed) activeCount++;
             unchecked { i++; }
-        }
+        }while(i < length);
+
 
         // Reduce the array to the actual active Loot size
         uint256[] memory ids = new uint256[](activeCount);
         uint256 j;
-        for(uint256 i; i < length;){
-            if(!userLoots[user][i].claimed) {
-                ids[j] = userLoots[user][i].id;
+        for(uint256 n; n < length;){
+            if(!userLoots[user][n].claimed) {
+                ids[j] = userLoots[user][n].id;
                 unchecked { j++; }
             }
-            unchecked { i++; }
+            unchecked { n++; }
         }
 
-        return ids;        
+        return ids;
     }
 
     /**
@@ -235,7 +238,7 @@ contract Loot is Owner, ReentrancyGuard {
     * @param palAmount Amount of PAL
     * @param extraAmount Amount of extra token
     */
-    function createLoot(address user, uint256 startTs, uint256 palAmount, uint256 extraAmount) external nonReentrant onlyLootCreator {
+    function createLoot(address user, uint256 startTs, uint256 palAmount, uint256 extraAmount) external nonReentrant onlyLootCreator payable { //Gas savings
         if(palAmount == 0 && extraAmount == 0) return;
 
         uint256 lootId = userLoots[user].length;
@@ -259,8 +262,9 @@ contract Loot is Owner, ReentrancyGuard {
     * @param receiver Address to receive the PAL & extra token
     */
     function claimLoot(uint256 id, address receiver) external nonReentrant {
+        if(receiver == address(0)) revert Errors.AddressZero(); // Gas savings it should be on top
         if(id >= userLoots[msg.sender].length) revert Errors.InvalidId();
-        if(receiver == address(0)) revert Errors.AddressZero();
+
         // Load the Loot state
         LootData storage loot = userLoots[msg.sender][id];
 
@@ -268,15 +272,15 @@ contract Loot is Owner, ReentrancyGuard {
         if(block.timestamp < loot.startTs) revert Errors.VestingNotStarted();
         loot.claimed = true;
 
-        
 
         uint256 palAmount = loot.palAmount;
+        uint64 LocalVestingDur = vestingDuration; // Gas savings
         if(palAmount > 0) {
             // Check if the Loot is still vesting, and slash the PAL amount if needed
-            uint256 vestingEndTs = loot.startTs + vestingDuration;
+            uint256 vestingEndTs = loot.startTs + LocalVestingDur;
             if(block.timestamp < vestingEndTs){
                 uint256 remainingVesting = vestingEndTs - block.timestamp;
-                uint256 slashingAmount = palAmount * remainingVesting / vestingDuration;
+                uint256 slashingAmount = palAmount * remainingVesting / LocalVestingDur;
 
                 // Notify the LootCreator of the slashed amount
                 lootCreator.notifyUndistributedRewards(slashingAmount);
@@ -286,12 +290,14 @@ contract Loot is Owner, ReentrancyGuard {
             // Transfer the PAL to the receiver
             pal.safeTransferFrom(tokenReserve, receiver, palAmount);
         }
-        if(loot.extraAmount > 0) {
+
+        uint256 LocalEAmt = loot.extraAmount; // Gas savings
+        if(LocalEAmt > 0) {
         // Transfer the extra token to the receiver
-            extraToken.safeTransferFrom(tokenReserve, receiver, loot.extraAmount);
+            extraToken.safeTransferFrom(tokenReserve, receiver, LocalEAmt);// Gas savings
         }
 
-        emit LootClaimed(msg.sender, id, palAmount, loot.extraAmount);
+        emit LootClaimed(msg.sender, id, palAmount, LocalEAmt);// Gas savings
     }
 
     /**
@@ -306,10 +312,13 @@ contract Loot is Owner, ReentrancyGuard {
         uint256 totalPalAmount;
         uint256 totalExtraAmount;
 
+        LootData storage loot; // Gas savings
+        uint64 LocalVestingDuration = vestingDuration; // Gas savings
+        
         for(uint256 i; i < length;){
             if(ids[i] >= userLoots[msg.sender].length) revert Errors.InvalidId();
             // Load the Loot state
-            LootData storage loot = userLoots[msg.sender][ids[i]];
+            loot = userLoots[msg.sender][ids[i]];
 
             if(loot.claimed) revert Errors.AlreadyClaimed();
             if(block.timestamp < loot.startTs) revert Errors.VestingNotStarted();
@@ -318,23 +327,25 @@ contract Loot is Owner, ReentrancyGuard {
             // Check if the Loot is still vesting, and slash the PAL amount if needed
             uint256 palAmount = loot.palAmount;
             if(palAmount > 0) {
-                uint256 vestingEndTs = loot.startTs + vestingDuration;
+                uint256 vestingEndTs = loot.startTs + LocalVestingDuration;
                 if(block.timestamp < vestingEndTs){
                     uint256 remainingVesting = vestingEndTs - block.timestamp;
-                    uint256 slashingAmount = palAmount * remainingVesting / vestingDuration;
+                    uint256 slashingAmount = palAmount * remainingVesting / LocalVestingDuration;
 
                     // Notify the LootCreator of the slashed amount
                     lootCreator.notifyUndistributedRewards(slashingAmount);
 
                     palAmount -= slashingAmount;
                 }
+            // Sum up all the PAL & extra token to be transferred
+            totalPalAmount += palAmount; // Gas savings
             }
 
-            // Sum up all the PAL & extra token to be transferred
-            totalPalAmount += palAmount;
-            totalExtraAmount += loot.extraAmount;
+            
+            uint256 LocalExtraAmount = loot.extraAmount;
+            totalExtraAmount += LocalExtraAmount;
 
-            emit LootClaimed(msg.sender, ids[i], palAmount, loot.extraAmount);
+            emit LootClaimed(msg.sender, ids[i], palAmount, LocalExtraAmount); // Gas savings
 
             unchecked { i++; }
         }
@@ -356,10 +367,10 @@ contract Loot is Owner, ReentrancyGuard {
     * @dev Updates the vesting duration for Loots
     * @param _vestingDuration New vesting duration
     */
-    function updateVestingDuration(uint256 _vestingDuration) external onlyOwner {
+    function updateVestingDuration(uint64 _vestingDuration) external payable onlyOwner { // Gas savings
         if(_vestingDuration < 1 weeks) revert Errors.InvalidParameter();
 
-        uint256 oldDuration = vestingDuration;
+        uint64 oldDuration = vestingDuration;
         vestingDuration = _vestingDuration;
 
         emit VestingDurationUpdated(oldDuration, _vestingDuration);
@@ -370,7 +381,7 @@ contract Loot is Owner, ReentrancyGuard {
     * @dev Updates the Loot Creator contract address
     * @param _lootCreator Address of the new Loot Creator contract
     */
-    function updateLootCreator(address _lootCreator) external onlyOwner {
+    function updateLootCreator(address _lootCreator) external payable onlyOwner { // Gas savings
         if(_lootCreator == address(0)) revert Errors.InvalidParameter();
 
         address oldCreator = address(lootCreator);

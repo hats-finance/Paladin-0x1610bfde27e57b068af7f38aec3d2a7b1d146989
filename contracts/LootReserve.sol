@@ -32,7 +32,7 @@ contract LootReserve is Owner {
     IERC20 public immutable extraToken;
 
     /** @notice Address of the Loot contract */
-    address public loot;
+    address public  loot; // Gas savings this can be immutable and set while deployment to save gas.
 
 
     // Events
@@ -50,7 +50,7 @@ contract LootReserve is Owner {
     constructor(
         address _pal,
         address _extraToken
-    ){
+    ) payable{ // Gas savings
         pal = IERC20(_pal);
         extraToken = IERC20(_extraToken);
     }
@@ -60,7 +60,7 @@ contract LootReserve is Owner {
     * @dev Initialize the contract
     * @param _loot Address of the Loot contract
     */
-    function init(address _loot) external onlyOwner {
+    function init(address _loot) external payable onlyOwner {  // Gas savings
         if(loot != address(0)) revert Errors.CreatorAlreadySet();
         loot = _loot;
 
@@ -94,8 +94,9 @@ contract LootReserve is Owner {
     * @return extraAllowance (uint256) : extra remaining allowance
     */
     function getRemainingAllowances() external view returns(uint256 palAllowance, uint256 extraAllowance){
-        palAllowance = pal.allowance(address(this), loot);
-        extraAllowance = extraToken.allowance(address(this), loot);
+        address localLoot = loot;
+        palAllowance = pal.allowance(address(this), localLoot);
+        extraAllowance = extraToken.allowance(address(this), localLoot);
     }
 
 
@@ -105,19 +106,20 @@ contract LootReserve is Owner {
     * @notice Resets the allowances for the Loot contract
     * @dev Resets the allowances for the Loot contract to max uint256
     */
-    function resetMaxAllowance() external onlyOwner {
-        pal.approve(loot, type(uint256).max);
-        extraToken.approve(loot, type(uint256).max);
+    function resetMaxAllowance() external payable onlyOwner { // Gas savings
+        address localLoot = loot;
+        pal.approve(localLoot, type(uint256).max);
+        extraToken.approve(localLoot, type(uint256).max);
 
-        emit MaxAllowanceSet(address(pal), loot);
-        emit MaxAllowanceSet(address(extraToken), loot);
+        emit MaxAllowanceSet(address(pal), localLoot);
+        emit MaxAllowanceSet(address(extraToken), localLoot);
     }
 
     /**
     * @notice Empty this contract and send all tokens to the owner
     * @dev Empty this contract and send all tokens to the owner
     */
-    function emptyReserve() external onlyOwner {
+    function emptyReserve() external payable onlyOwner { // Gas savings
         uint256 palBalance = pal.balanceOf(address(this));
         uint256 extraBalance = extraToken.balanceOf(address(this));
 

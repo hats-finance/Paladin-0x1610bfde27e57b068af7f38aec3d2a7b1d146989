@@ -155,7 +155,7 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
         address _loot,
         address _lootVoteController,
         address _holyPower
-    ) {
+    ) payable { // Gas savings
         loot = _loot;
         lootVoteController = _lootVoteController;
         holyPower = _holyPower;
@@ -168,7 +168,7 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
     * @dev Init the contract with the Loot Gauge/Budget address
     * @param _lootGauge Address of the Loot Gauge or Budget address
     */
-    function init(address _lootGauge) external onlyOwner {
+    function init(address _lootGauge) external payable onlyOwner { // Gas savings
         if(_lootGauge == address(0)) revert Errors.AddressZero();
         if(lootGauge != address(0)) revert Errors.AlreadyInitialized();
 
@@ -259,9 +259,11 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
         uint256 length = params.length;
         if(length == 0) revert Errors.EmptyParameters();
 
-        for(uint256 i; i < length; i++){
+        uint256 i;
+        do{
             _createLoot(user, params[i].distributor, params[i].questId, params[i].period);
-        }
+            unchecked{ i++;}
+        }while(i < length); // Gas savings
     }
 
     /**
@@ -287,7 +289,7 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
         // Pull any new budget & update the current period to have an up to date budget
         _pullBudget();
         _updatePeriod();
-        
+
         // Fetch the gauge for the quest & check if it's listed
         address gauge = _getQuestGauge(questId, msg.sender);
         if(!ILootVoteController(lootVoteController).isListedGauge(gauge)) return;
@@ -311,8 +313,10 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
 
         // If the gauge weight is higher than the cap, we need to handle the un-allocated rewards
         if(gaugeWeight > gaugeCap) {
-            uint256 unsunedWeight = gaugeWeight - gaugeCap;
-
+            uint256 unsunedWeight;
+            unchecked{ // Gas savings no chance of underflow here.
+             unsunedWeight = gaugeWeight - gaugeCap;
+            }
             gaugeWeight = gaugeCap;
 
             // Handle un-allocated budget => set it as pending for next periods
@@ -405,14 +409,14 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
         uint256 questId,
         address distributor,
         uint256 period
-    ) internal view returns(Allocation memory) {
+    ) internal view returns(Allocation memory) { // Gas savings exp
         address board = MultiMerkleDistributorV2(distributor).questBoard();
         uint256 nbQuestForGauge = IQuestBoard(board).getQuestIdsForPeriodForGauge(gauge, period).length;
         uint256 questTotalRewards = totalQuestPeriodRewards[distributor][questId][period];
+        Allocation memory allocation; // Gas savings
+        if(nbQuestForGauge == 0 || questTotalRewards == 0) return allocation; // Gas savings
 
-        if(nbQuestForGauge == 0 || questTotalRewards == 0) return Allocation(0, 0);
 
-        Allocation memory allocation;
         // Load the Budget for the gauge for the period
         Budget memory budget = gaugeBudgetPerPeriod[gauge][period];
 
@@ -433,24 +437,25 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
     * @dev Updates the current period budget & uses the pending budget
     */
     function _updatePeriod() internal {
-        if(block.timestamp < nextBudgetUpdatePeriod) return;
+        uint256 LocalBUP = nextBudgetUpdatePeriod; // Gas savings
+        if(block.timestamp < LocalBUP) return;
 
         // Save the current block number for checkpointing
-        periodBlockCheckpoint[nextBudgetUpdatePeriod] = block.number;
+        periodBlockCheckpoint[LocalBUP] = block.number; // Gas savings
 
         // Update the current period budget
         Budget memory pending = pengingBudget;
-        pengingBudget = Budget(0, 0);
+        delete pengingBudget; // Delete instead if zero  value Gas savings
 
         // 2 weeks difference to not impact the current distribution and allocations
-        uint256 lastFinishedPeriod = nextBudgetUpdatePeriod - (WEEK * 2);
+        uint256 lastFinishedPeriod = LocalBUP - (WEEK * 2); // Gas savings
         Budget memory previousBudget = periodBudget[lastFinishedPeriod];
         Budget memory previousSpent = allocatedBudgetHistory[lastFinishedPeriod];
         pending.palAmount += previousBudget.palAmount - previousSpent.palAmount;
         pending.extraAmount += previousBudget.extraAmount - previousSpent.extraAmount;
 
         // Save the new set budget
-        periodBudget[nextBudgetUpdatePeriod] = pending;
+        periodBudget[LocalBUP] = pending; // Gas savings
 
         nextBudgetUpdatePeriod += WEEK;
     }
@@ -515,7 +520,7 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
     * @dev Adds a new Distributor allowed to interact with this contract
     * @param distributor Address of the Distributor
     */
-    function addDistributor(address distributor) external onlyOwner {
+    function addDistributor(address distributor) external payable onlyOwner { // Gas savings
         if(distributor == address(0)) revert Errors.AddressZero();
         if(allowedDistributors[distributor]) revert Errors.AlreadyListed();
 
@@ -530,7 +535,7 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
     * @dev Removes a Distributor allowed to interact with this contract
     * @param distributor Address of the Distributor
     */
-    function removeDistributor(address distributor) external onlyOwner {
+    function removeDistributor(address distributor) external payable onlyOwner { // Gas savings
         if(distributor == address(0)) revert Errors.AddressZero();
         if(!allowedDistributors[distributor]) revert Errors.NotListed();
 
@@ -558,7 +563,7 @@ contract LootCreator is Owner, ReentrancyGuard, ILootCreator {
     * @dev Updates the Loot Gauge/Budget address
     * @param newGauge Address of the new Loot Gauge/Budget contract
     */
-    function updateLootGauge(address newGauge) external onlyOwner {
+    function updateLootGauge(address newGauge) external payable onlyOwner { // Gas savings
         if(newGauge == address(0)) revert Errors.AddressZero();
         if(lootGauge == newGauge) revert Errors.SameAddress();
 

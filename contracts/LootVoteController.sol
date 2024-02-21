@@ -65,9 +65,10 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
 
     /** @notice Struct used for the vote method */
     struct VoteVars {
+        int128 userSlope;
         uint256 currentPeriod;
         uint256 nextPeriod;
-        int128 userSlope;
+
         uint256 userLockEnd;
         uint256 oldBias;
         uint256 newBias;
@@ -90,7 +91,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     // Storage
 
     /** @notice Address of the hPalPower contract */
-    address public hPalPower;
+    address public immutable hPalPower; // Gas savings variable can be set as Immutable
 
     /** @notice Next ID to list Boards */
     uint256 public nextBoardId; // ID 0 == no ID/not set
@@ -106,7 +107,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     mapping(address => uint256) public gaugeToBoardId;
     
     /** @notice Default weight cap for gauges */
-    uint256 public defaultCap = 0.1 * 1e18; // 10%
+    uint256 public immutable  defaultCap = 0.1 * 1e18; // 10% // Gas savings reduce the variables
     /** @notice Custom caps for gauges */
     mapping(address => uint256) public gaugeCaps;
     /** @notice Flag for killed gauges */
@@ -189,7 +190,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
 
     // Constructor
 
-    constructor(address _hPalPower) {
+    constructor(address _hPalPower) payable { // Gas savings
         hPalPower = _hPalPower;
 
         nextBoardId++;
@@ -311,12 +312,14 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @param gauge Address of the gauges
     * @param userPower Power used for each gauge
     */
-    function voteForManyGaugeWeights(address[] memory gauge, uint256[] memory userPower) external nonReentrant {
+    function voteForManyGaugeWeights(address[] calldata gauge, uint256[] calldata userPower) external override nonReentrant { // Gas savings memory to calldata
         uint256 length = gauge.length;
         if(length != userPower.length) revert Errors.ArraySizeMismatch();
-        for(uint256 i; i < length; i++) {
-            _voteForGauge(msg.sender, gauge[i], userPower[i], msg.sender);
-        }
+        uint256 i;
+        do{ // Gas savings
+           _voteForGauge(msg.sender, gauge[i], userPower[i], msg.sender);
+           i++;
+        }while(i < length); // Gas savings
     }
 
     /**
@@ -327,7 +330,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @param userPower Power used for this gauge
     */
     function voteForGaugeWeightsFor(address user, address gauge, uint256 userPower) external nonReentrant {
-        ProxyVoter memory proxyState = proxyVoterState[user][msg.sender];
+        ProxyVoter storage proxyState = proxyVoterState[user][msg.sender]; // Gas savings
         if(proxyState.maxPower == 0) revert Errors.NotAllowedProxyVoter();
         if(proxyState.endTimestamp < block.timestamp) revert Errors.ExpiredProxy();
         if(userPower > proxyState.maxPower) revert Errors.VotingPowerProxyExceeded();
@@ -342,18 +345,27 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @param gauge Address of the gauges
     * @param userPower Power used for each gauge
     */
-    function voteForManyGaugeWeightsFor(address user, address[] memory gauge, uint256[] memory userPower) external nonReentrant {
-        ProxyVoter memory proxyState = proxyVoterState[user][msg.sender];
+    function voteForManyGaugeWeightsFor(address user, address[] calldata gauge, uint256[] calldata userPower) override external  nonReentrant { // Gas savings memory to calldata
+        ProxyVoter storage proxyState = proxyVoterState[user][msg.sender]; // Gas savings
         if(proxyState.maxPower == 0) revert Errors.NotAllowedProxyVoter();
         if(proxyState.endTimestamp < block.timestamp) revert Errors.ExpiredProxy();
         uint256 totalPower;
 
         uint256 length = gauge.length;
         if(length != userPower.length) revert Errors.ArraySizeMismatch();
-        for(uint256 i; i < length; i++) {
+
+        uint256 i;
+        do{ // Gas savings
+
             totalPower += userPower[i];
             _voteForGauge(user, gauge[i], userPower[i], msg.sender);
-        }
+
+            unchecked {
+                i++;
+            }
+        }while( i < length);
+
+
         if(totalPower > proxyState.maxPower) revert Errors.VotingPowerProxyExceeded();
     }
 
@@ -433,7 +445,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
         _clearExpiredProxies(user);
 
         // Revert if the user already has a Proxy with the same address
-        ProxyVoter memory prevProxyState = proxyVoterState[user][proxy];
+        ProxyVoter storage prevProxyState = proxyVoterState[user][proxy]; // Gas savings
         if(prevProxyState.maxPower != 0) revert Errors.ProxyAlreadyActive();
 
         // Block the user's power for the Proxy & revert if the user execeed's its voting power
@@ -484,14 +496,16 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
         uint256 length = proxies.length;
         if(length == 0) return;
         uint256 lastIndex = length - 1;
+        ProxyVoter storage proxyState; // Gas savings
         for(uint256 i; i < length; i++) {
             address proxyVoter = proxies[i];
-            if(proxyVoterState[user][proxyVoter].endTimestamp < block.timestamp) {
+            proxyState = proxyVoterState[user][proxyVoter]; // Gas savings
+            if(proxyState.endTimestamp < block.timestamp) {
                 // Free the user blocked voting power
-                blockedProxyPower[user] -= proxyVoterState[user][proxyVoter].maxPower;
+                blockedProxyPower[user] -= proxyState.maxPower; // Gas savings
                 // Delete the Proxy
                 delete proxyVoterState[user][proxyVoter];
-                
+
                 // Remove the Proxy from the user's list
                 if(i != lastIndex) {
                     currentUserProxyVoters[user][i] = currentUserProxyVoters[user][length-1];
@@ -509,19 +523,23 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @param caller Address of the caller
     */
     function _voteForGauge(address user, address gauge, uint256 userPower, address caller) internal {
+
+        // Check the gauge is listed & the user lock is not expired
+        if(!_isGaugeListed(gauge)) revert Errors.NotListed();
+        if(userPower > MAX_BPS) revert Errors.VotingPowerInvalid(); // Gas savings this should be in top of the function
         VoteVars memory vars;
-        
+
         // Get the periods timestamps & user lock state
-        vars.currentPeriod = (block.timestamp) / WEEK * WEEK;
+        
+            vars.currentPeriod = (block.timestamp) / WEEK * WEEK;
+        
+
         vars.nextPeriod = vars.currentPeriod + WEEK;
         vars.userSlope = IHolyPalPower(hPalPower).getUserPointAt(user, vars.currentPeriod).slope;
         vars.userLockEnd = IHolyPalPower(hPalPower).locked__end(user);
 
-        // Check the gauge is listed & the user lock is not expired
-        if(!_isGaugeListed(gauge)) revert Errors.NotListed();
         if(vars.userLockEnd < vars.nextPeriod) revert Errors.LockExpired();
         // Check the user has enough voting power & the cooldown is respected
-        if(userPower > MAX_BPS) revert Errors.VotingPowerInvalid();
         if(block.timestamp < lastUserVote[user][gauge] + VOTE_COOLDOWN) revert Errors.VotingCooldown();
 
         // Clear any expired past Proxy
@@ -550,23 +568,36 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
         // Update the voter used voting power & the proxy one if needed
         vars.totalPowerUsed = voteUserPower[user];
         vars.totalPowerUsed = vars.totalPowerUsed + newSlope.power - oldSlope.power;
+
         if(user == caller) {
             uint256 usedPower = usedFreePower[user];
+
             vars.oldUsedPower = oldSlope.caller != user ? 0 : oldSlope.power;
+
             usedPower = usedPower + newSlope.power - vars.oldUsedPower;
+
             if(usedPower > (MAX_BPS - blockedProxyPower[user])) revert Errors.VotingPowerExceeded();
+
             usedFreePower[user] = usedPower;
+
         } else {
+
             uint256 proxyPower = proxyVoterState[user][caller].usedPower;
+
             vars.oldUsedPower = oldSlope.caller == caller ? oldSlope.power : 0;
+
             proxyPower = proxyPower + newSlope.power - vars.oldUsedPower;
+
             if(oldSlope.caller == user) {
+
                 usedFreePower[user] -= oldSlope.power;
             }
+
             if(proxyPower > proxyVoterState[user][caller].maxPower) revert Errors.VotingPowerProxyExceeded();
 
             proxyVoterState[user][caller].usedPower = proxyPower;
         }
+
         if(vars.totalPowerUsed > MAX_BPS) revert Errors.VotingPowerExceeded();
         voteUserPower[user] = vars.totalPowerUsed;
 
@@ -596,6 +627,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
             changesWeight[gauge][oldSlope.end] -= oldSlope.slope;
             changesWeightTotal[oldSlope.end] -= oldSlope.slope;
         }
+
         changesWeight[gauge][newSlope.end] += newSlope.slope;
         changesWeightTotal[newSlope.end] += newSlope.slope;
 
@@ -614,9 +646,10 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     */
     function _getGaugeRelativeWeight(address gauge, uint256 ts) internal view returns(uint256) {
         if(isGaugeKilled[gauge]) return 0;
-
+        
+        
         ts = ts / WEEK * WEEK;
-
+        
         uint256 _totalWeight = pointsWeightTotal[ts].bias;
         if(_totalWeight == 0) return 0;
 
@@ -701,10 +734,10 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @param board Address of the Quest Board
     * @param distributor Address of the Distributor
     */
-    function addNewBoard(address board, address distributor) external onlyOwner {
+    function addNewBoard(address board, address distributor) external payable onlyOwner { // Gas savings
         if(board == address(0) || distributor == address(0)) revert Errors.AddressZero();
         if(boardToId[board] != 0 || distributorToId[distributor] != 0) revert Errors.AlreadyListed();
-        
+
         uint256 boardId = nextBoardId;
         nextBoardId++;
 
@@ -721,9 +754,9 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @param board Address of the Quest Board
     * @param newDistributor Address of the new Distributor
     */
-    function updateDistributor(address board, address newDistributor) external onlyOwner {
+    function updateDistributor(address board, address newDistributor) external payable onlyOwner { // Gas savings
         if(board == address(0) || newDistributor == address(0)) revert Errors.AddressZero();
-        
+
         uint256 boardId = boardToId[board];
         if(boardId == 0) revert Errors.InvalidParameter();
 
@@ -740,7 +773,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @param boardId ID of the Quest Board
     * @param cap Weight cap for the gauge
     */
-    function addNewGauge(address gauge, uint256 boardId, uint256 cap) external onlyOwner {
+    function addNewGauge(address gauge, uint256 boardId, uint256 cap) external payable onlyOwner { // Gas savings
         if(gauge == address(0)) revert Errors.AddressZero();
         if(boardId == 0) revert Errors.InvalidParameter();
         if(_isGaugeListed(gauge)) revert Errors.AlreadyListed();
@@ -759,7 +792,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @param gauge Address of the gauge
     * @param newCap New weight cap for the gauge
     */
-    function updateGaugeCap(address gauge, uint256 newCap) external onlyOwner {
+    function updateGaugeCap(address gauge, uint256 newCap) external payable onlyOwner { // Gas savings
         if(gauge == address(0)) revert Errors.AddressZero();
         if(gaugeToBoardId[gauge] == 0) revert Errors.InvalidParameter();
         if(isGaugeKilled[gauge]) revert Errors.KilledGauge();
@@ -774,7 +807,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @dev Kills a gauge, blocking the votes & weight updates
     * @param gauge Address of the gauge
     */
-    function killGauge(address gauge) external onlyOwner {
+    function killGauge(address gauge) external payable onlyOwner { // Gas savings
         if(gauge == address(0)) revert Errors.AddressZero();
         if(!_isGaugeListed(gauge)) revert Errors.NotListed();
         if(isGaugeKilled[gauge]) revert Errors.KilledGauge();
@@ -789,7 +822,7 @@ contract LootVoteController is Owner, ReentrancyGuard, ILootVoteController {
     * @dev Unkills a gauge, unblocking the votes & weight updates
     * @param gauge Address of the gauge
     */
-    function unkillGauge(address gauge) external onlyOwner {
+    function unkillGauge(address gauge) external payable onlyOwner { // Gas savings
         if(gauge == address(0)) revert Errors.AddressZero();
         if(!isGaugeKilled[gauge]) revert Errors.NotKilledGauge();
 

@@ -115,7 +115,7 @@ contract LootBudget is Owner, ReentrancyGuard {
     * @dev Updates the PAL weekly budget
     * @param newBudget new weekly budget amount
     */
-    function updatePalWeeklyBudget(uint256 newBudget) external onlyOwner() {
+    function updatePalWeeklyBudget(uint256 newBudget) external payable onlyOwner() { // Gas savings
         uint256 oldBudget = palWeeklyBudget;
         palWeeklyBudget = newBudget;
 
@@ -127,7 +127,7 @@ contract LootBudget is Owner, ReentrancyGuard {
     * @dev Updates the extra token weekly budget
     * @param newBudget new weekly budget amount
     */
-    function updateExtraWeeklyBudget(uint256 newBudget) external onlyOwner() {
+    function updateExtraWeeklyBudget(uint256 newBudget) external payable onlyOwner() { // Gas savings
         uint256 oldBudget = extraWeeklyBudget;
         extraWeeklyBudget = newBudget;
 
@@ -138,7 +138,7 @@ contract LootBudget is Owner, ReentrancyGuard {
     * @notice Empty this contract and send all tokens to the owner
     * @dev Empty this contract and send all tokens to the owner
     */
-    function emptyReserve() external onlyOwner {
+    function emptyReserve() external payable onlyOwner { // Gas savings
         uint256 palBalance = IERC20(pal).balanceOf(address(this));
         uint256 extraBalance = IERC20(extraToken).balanceOf(address(this));
 

@@ -98,14 +98,14 @@ contract MultiMerkleDistributorV2 is Owner, ReentrancyGuard {
 
     // Constructor
 
-    constructor(address _questBoard){
+    constructor(address _questBoard) payable { // Gas savings
         if(_questBoard == address(0)) revert Errors.AddressZero();
 
         questBoard = _questBoard;
     }
 
     // Functions
-   
+
     /**
     * @notice Checks if the rewards were claimed for a user on a given period
     * @dev Checks if the rewards were claimed for a user (based on the index) on a given period
@@ -121,7 +121,7 @@ contract MultiMerkleDistributorV2 is Owner, ReentrancyGuard {
         uint256 mask = (1 << claimedBitIndex);
         return claimedWord & mask != 0;
     }
-   
+
     /**
     * @dev Sets the rewards as claimed for the index on the given period
     * @param questID ID of the Quest
@@ -147,12 +147,13 @@ contract MultiMerkleDistributorV2 is Owner, ReentrancyGuard {
     */
     function claim(uint256 questID, uint256 period, uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) public nonReentrant {
         if(account == address(0)) revert Errors.AddressZero();
-        if(questMerkleRootPerPeriod[questID][period] == 0) revert Errors.MerkleRootNotUpdated();
+        bytes32  LocalQMRPP =  questMerkleRootPerPeriod[questID][period]; // Gas savings
+        if(LocalQMRPP == 0) revert Errors.MerkleRootNotUpdated();// Gas savings
         if(isClaimed(questID, period, index)) revert Errors.AlreadyClaimed();
 
         // Check that the given parameters match the given Proof
         bytes32 node = keccak256(abi.encodePacked(questID, period, index, account, amount));
-        if(!MerkleProof.verify(merkleProof, questMerkleRootPerPeriod[questID][period], node)) revert Errors.InvalidProof();
+        if(!MerkleProof.verify(merkleProof, LocalQMRPP, node)) revert Errors.InvalidProof(); // Gas savings
 
         // Set the rewards as claimed for that period
         // And transfer the rewards to the user
@@ -186,14 +187,15 @@ contract MultiMerkleDistributorV2 is Owner, ReentrancyGuard {
     */
     function multiClaim(address account, ClaimParams[] calldata claims) external {
         uint256 length = claims.length;
-        
+
         if(length == 0) revert Errors.EmptyParameters();
 
-        for(uint256 i; i < length;){
+        uint i; // Gas savings
+        do{
             claim(claims[i].questID, claims[i].period, claims[i].index, account, claims[i].amount, claims[i].merkleProof);
+            unchecked{ ++i;}
+        }while(i < length);
 
-            unchecked{ ++i; }
-        }
     }
 
 
@@ -267,8 +269,9 @@ contract MultiMerkleDistributorV2 is Owner, ReentrancyGuard {
     * @param claimedAmount Amount of rewards claimed
     */
     function _triggerCreateLoot(address user, uint256 questID, uint256 period, uint256 claimedAmount) internal {
-        if(lootCreator != address(0)) {
-            ILootCreator(lootCreator).notifyQuestClaim(
+        address LocalLC = lootCreator;
+        if(LocalLC != address(0)) {
+            ILootCreator(LocalLC).notifyQuestClaim(
                 user,
                 questID,
                 period,
@@ -346,7 +349,7 @@ contract MultiMerkleDistributorV2 is Owner, ReentrancyGuard {
 
         return true;
     }
-   
+
     /**
     * @notice Updates the period of a Quest by adding the Merkle Root
     * @dev Add the Merkle Root for the eriod of the given Quest
@@ -390,7 +393,7 @@ contract MultiMerkleDistributorV2 is Owner, ReentrancyGuard {
     * @dev Sets the address for the Loot Creator
     * @param _lootCreator Address of the Loot Creator
     */
-    function setLootCreator(address _lootCreator) external onlyOwner {
+    function setLootCreator(address _lootCreator) external payable onlyOwner {
         address oldCreator = lootCreator;
         lootCreator = _lootCreator;
 
@@ -412,7 +415,7 @@ contract MultiMerkleDistributorV2 is Owner, ReentrancyGuard {
         return true;
     }
 
-    // 
+    //
     /**
     * @notice Allows to update the MerkleRoot for a given period of a Quest if the current Root is incorrect
     * @dev Updates the MerkleRoot for the period of the Quest

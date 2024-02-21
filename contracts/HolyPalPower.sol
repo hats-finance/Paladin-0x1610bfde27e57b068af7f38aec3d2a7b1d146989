@@ -46,7 +46,7 @@ contract HolyPalPower is IHolyPalPower {
 
     // Constructor
 
-    constructor(address _hPal) {
+    constructor(address _hPal) payable { // Gas savings
         hPal = _hPal;
     }
 
@@ -63,11 +63,11 @@ contract HolyPalPower is IHolyPalPower {
         // Fetch user current Lock & return 0 if no Lock
         IHolyPaladinToken.UserLock memory currentLock = IHolyPaladinToken(hPal).getUserLock(user);
         if(currentLock.amount == 0) return 0;
-        
+
         // Calculate the end of the current Lock (rounded down to weeks) & return 0 if already expired
         uint256 endTimestamp = ((currentLock.startTimestamp + currentLock.duration) / WEEK) * WEEK;
         if(endTimestamp <= block.timestamp) return 0;
-        
+
         // Calculate the slope
         uint256 duration = endTimestamp - currentLock.startTimestamp;
         uint256 slope = currentLock.amount / duration;
@@ -163,14 +163,14 @@ contract HolyPalPower is IHolyPalPower {
     /**
     * @dev Converts a user Lock to a Point (slope & bias)
     * @param lock Lock to convert
-    * @return Point : User Point
+    * @return point
     */
-    function _convertLock(IHolyPaladinToken.UserLock memory lock) internal pure returns(Point memory) {
-        Point memory point = Point(0,0,0,0);
+    function _convertLock(IHolyPaladinToken.UserLock memory lock) internal pure returns(Point memory point) { // Gas savings
+
 
         // Empty Lock (no Lock for user, or not old enough)
         if(lock.amount == 0) return point;
-        
+
         // Get the end timetamp
         // (we round down endTimestamp to weeks for voting purposes)
         point.endTimestamp = ((lock.startTimestamp + lock.duration) / WEEK) * WEEK;
@@ -183,7 +183,7 @@ contract HolyPalPower is IHolyPalPower {
         // Fill the rest of the Point
         point.blockNumber = lock.fromBlock;
 
-        return point;
+        
     }
 
     /**
@@ -193,7 +193,7 @@ contract HolyPalPower is IHolyPalPower {
     * @return UserLock : User Lock
     */
     function _findUserPastLock(address user, uint256 timestamp) internal view returns(IHolyPaladinToken.UserLock memory) {
-        IHolyPaladinToken.UserLock memory emptyLock = IHolyPaladinToken.UserLock(0,0,0,0);
+        IHolyPaladinToken.UserLock memory emptyLock; // Gas savings
         IHolyPaladinToken _hPal = IHolyPaladinToken(hPal);
 
         // Get user Lock count, return an empty Point if user never locked
@@ -216,7 +216,7 @@ contract HolyPalPower is IHolyPalPower {
         uint256 low;
         uint256 mid;
 
-        while (low < high) {
+        while (low < high) { // Binary search algorithim
             mid = avg(low, high);
             IHolyPaladinToken.UserLock memory midLock = _hPal.userLocks(user, mid);
             if (midLock.fromBlock == targetBlockNumber) {
