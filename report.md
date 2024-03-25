@@ -23,9 +23,9 @@ Markets for Influence and Voting Rights across DeFi
 
 - Type: A public audit competition hosted by Paladin
 - Duration: 2 weeks
-- Maximum Reward: $434,000,000,000,000,000
+- Maximum Reward: $93000
 - Submissions: 74
-- Total Payout: $389,992,400,000,000,000 distributed among 29 participants.
+- Total Payout: $66800 distributed among 29 participants.
 
 ## Scope of Audit
 
